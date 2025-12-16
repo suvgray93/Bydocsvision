@@ -407,3 +407,389 @@ export default App;
 - Фильтрацию и сортировку данных
 - Более сложные анимации
 - Параметризацию запроса данных
+
+  Вот полная конфигурация Webpack для запуска этого React-приложения на локальном сервере:
+
+## 1. **package.json**
+
+```json
+{
+  "name": "react-modal-app",
+  "version": "1.0.0",
+  "description": "React приложение с модальным окном",
+  "main": "src/index.js",
+  "scripts": {
+    "start": "webpack serve --mode development --open",
+    "build": "webpack --mode production",
+    "dev": "webpack serve --mode development",
+    "build:dev": "webpack --mode development"
+  },
+  "dependencies": {
+    "react": "^18.2.0",
+    "react-dom": "^18.2.0"
+  },
+  "devDependencies": {
+    "@babel/core": "^7.23.2",
+    "@babel/preset-env": "^7.23.2",
+    "@babel/preset-react": "^7.22.15",
+    "babel-loader": "^9.1.3",
+    "css-loader": "^6.8.1",
+    "html-webpack-plugin": "^5.5.3",
+    "style-loader": "^3.3.3",
+    "webpack": "^5.89.0",
+    "webpack-cli": "^5.1.4",
+    "webpack-dev-server": "^4.15.1"
+  },
+  "browserslist": {
+    "production": [
+      ">0.2%",
+      "not dead",
+      "not op_mini all"
+    ],
+    "development": [
+      "last 1 chrome version",
+      "last 1 firefox version",
+      "last 1 safari version"
+    ]
+  }
+}
+```
+
+## 2. **webpack.config.js** (основной конфиг)
+
+```javascript
+const path = require('path');
+const HtmlWebpackPlugin = require('html-webpack-plugin');
+
+module.exports = (env, argv) => {
+  const isProduction = argv.mode === 'production';
+  
+  return {
+    // Точка входа
+    entry: './src/index.js',
+    
+    // Выходные файлы
+    output: {
+      path: path.resolve(__dirname, 'dist'),
+      filename: isProduction ? '[name].[contenthash].js' : '[name].js',
+      clean: true, // Очищать папку dist перед каждой сборкой
+    },
+    
+    // Настройки сервера разработки
+    devServer: {
+      static: {
+        directory: path.join(__dirname, 'public'),
+      },
+      compress: true,
+      port: 3000,
+      open: true,
+      hot: true, // Горячая перезагрузка
+      historyApiFallback: true, // Для React Router
+    },
+    
+    // Модули и загрузчики
+    module: {
+      rules: [
+        {
+          test: /\.(js|jsx)$/,
+          exclude: /node_modules/,
+          use: {
+            loader: 'babel-loader',
+            options: {
+              presets: [
+                '@babel/preset-env',
+                ['@babel/preset-react', { runtime: 'automatic' }]
+              ],
+            },
+          },
+        },
+        {
+          test: /\.css$/,
+          use: ['style-loader', 'css-loader'],
+        },
+        {
+          test: /\.(png|svg|jpg|jpeg|gif)$/i,
+          type: 'asset/resource',
+        },
+        {
+          test: /\.(woff|woff2|eot|ttf|otf)$/i,
+          type: 'asset/resource',
+        },
+      ],
+    },
+    
+    // Плагины
+    plugins: [
+      new HtmlWebpackPlugin({
+        template: './public/index.html',
+        filename: 'index.html',
+        inject: 'body',
+      }),
+    ],
+    
+    // Разрешение расширений файлов
+    resolve: {
+      extensions: ['.js', '.jsx', '.json'],
+    },
+    
+    // Оптимизация
+    optimization: {
+      splitChunks: {
+        chunks: 'all',
+      },
+    },
+    
+    // Настройки разработки
+    devtool: isProduction ? 'source-map' : 'eval-source-map',
+    
+    // Настройки производительности
+    performance: {
+      hints: isProduction ? 'warning' : false,
+      maxEntrypointSize: 512000,
+      maxAssetSize: 512000,
+    },
+  };
+};
+```
+
+## 3. **.babelrc** (конфигурация Babel)
+
+```json
+{
+  "presets": [
+    "@babel/preset-env",
+    ["@babel/preset-react", {
+      "runtime": "automatic"
+    }]
+  ]
+}
+```
+
+## 4. **Структура проекта**
+
+```
+react-modal-app/
+├── public/
+│   ├── index.html
+│   └── favicon.ico (опционально)
+├── src/
+│   ├── components/
+│   │   └── ModalWindow.jsx
+│   │   └── ModalWindow.css
+│   ├── App.jsx
+│   ├── index.js
+│   └── index.css (опционально)
+├── package.json
+├── webpack.config.js
+├── .babelrc
+└── .gitignore
+```
+
+## 5. **index.html** (шаблон HTML)
+
+```html
+<!DOCTYPE html>
+<html lang="ru">
+<head>
+    <meta charset="UTF-8">
+    <meta name="viewport" content="width=device-width, initial-scale=1.0">
+    <meta http-equiv="X-UA-Compatible" content="ie=edge">
+    <title>React Modal App</title>
+    <link rel="icon" href="data:;base64,iVBORw0KGgo=">
+</head>
+<body>
+    <div id="root"></div>
+    <!-- Файлы будут добавлены автоматически webpack -->
+</body>
+</html>
+```
+
+## 6. **src/index.js** (точка входа)
+
+```javascript
+import React from 'react';
+import ReactDOM from 'react-dom/client';
+import App from './App';
+
+const root = ReactDOM.createRoot(document.getElementById('root'));
+root.render(
+  <React.StrictMode>
+    <App />
+  </React.StrictMode>
+);
+```
+
+## 7. **src/App.jsx**
+
+```javascript
+import React from 'react';
+import ModalWindow from './components/ModalWindow';
+import './App.css';
+
+function App() {
+  return (
+    <div className="App">
+      <ModalWindow />
+    </div>
+  );
+}
+
+export default App;
+```
+
+## 8. **src/App.css** (опционально)
+
+```css
+* {
+  margin: 0;
+  padding: 0;
+  box-sizing: border-box;
+}
+
+body {
+  font-family: -apple-system, BlinkMacSystemFont, 'Segoe UI', 'Roboto', 'Oxygen',
+    'Ubuntu', 'Cantarell', 'Fira Sans', 'Droid Sans', 'Helvetica Neue',
+    sans-serif;
+  -webkit-font-smoothing: antialiased;
+  -moz-osx-font-smoothing: grayscale;
+  background-color: #f5f5f5;
+  padding: 20px;
+}
+
+.App {
+  max-width: 1200px;
+  margin: 0 auto;
+}
+```
+
+## 9. **.gitignore**
+
+```
+# Зависимости
+/node_modules
+/.pnp
+.pnp.js
+
+# Сборка
+/dist
+/build
+
+# Логи
+npm-debug.log*
+yarn-debug.log*
+yarn-error.log*
+
+# Переменные окружения
+.env
+.env.local
+.env.development.local
+.env.test.local
+.env.production.local
+
+# IDE
+.vscode
+.idea
+*.suo
+*.ntvs*
+*.njsproj
+*.sln
+*.sw?
+```
+
+## 10. **Команды для установки и запуска**
+
+### Установка зависимостей:
+```bash
+npm install
+```
+
+### Запуск в режиме разработки:
+```bash
+npm start
+# или
+npm run dev
+```
+
+### Сборка для продакшн:
+```bash
+npm run build
+```
+
+### Сборка в режиме разработки:
+```bash
+npm run build:dev
+```
+
+## Особенности конфигурации:
+
+1. **Webpack Dev Server**:
+   - Запуск на порту 3000
+   - Автоматическое открытие браузера
+   - Горячая перезагрузка (Hot Module Replacement)
+   - Поддержка React Router через `historyApiFallback`
+
+2. **Оптимизации**:
+   - Разделение кода (code splitting)
+   - Хеширование файлов в production
+   - Source maps в development
+
+3. **Babel**:
+   - Поддержка современных возможностей JavaScript
+   - Автоматический импорт React с `runtime: 'automatic'`
+
+4. **Загрузчики**:
+   - Babel для JS/JSX
+   - Style-loader и CSS-loader для стилей
+   - Загрузка изображений и шрифтов
+
+## Альтернативная упрощенная конфигурация (webpack.config.simple.js):
+
+```javascript
+const path = require('path');
+const HtmlWebpackPlugin = require('html-webpack-plugin');
+
+module.exports = {
+  mode: 'development',
+  entry: './src/index.js',
+  output: {
+    path: path.resolve(__dirname, 'dist'),
+    filename: 'bundle.js',
+  },
+  devServer: {
+    static: {
+      directory: path.join(__dirname, 'public'),
+    },
+    port: 3000,
+    open: true,
+  },
+  module: {
+    rules: [
+      {
+        test: /\.(js|jsx)$/,
+        exclude: /node_modules/,
+        use: 'babel-loader',
+      },
+      {
+        test: /\.css$/,
+        use: ['style-loader', 'css-loader'],
+      },
+    ],
+  },
+  plugins: [
+    new HtmlWebpackPlugin({
+      template: './public/index.html',
+    }),
+  ],
+  resolve: {
+    extensions: ['.js', '.jsx'],
+  },
+};
+```
+
+Эта конфигурация обеспечит:
+- Локальный сервер на `http://localhost:3000`
+- Горячую перезагрузку при изменении кода
+- Поддержку React и JSX
+- Загрузку CSS стилей
+- Оптимизацию для разработки и продакшн
+- 
