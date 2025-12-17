@@ -1,0 +1,352 @@
+иоВот пример реализации репозитория на C# с использованием Dapper для работы с разными таблицами:
+
+```csharp
+using System.Data;
+using Dapper;
+using System.ComponentModel.DataAnnotations.Schema;
+using Microsoft.Data.SqlClient; // или System.Data.SqlClient
+
+public interface IRepository
+{
+    Task<IEnumerable<T>> SearchAsync<T>(string searchTerm, string fieldName = "Name") where T : class;
+    Task<IEnumerable<T>> GetAllAsync<T>() where T : class;
+    Task<T?> GetByIdAsync<T>(int id) where T : class;
+}
+
+public class DapperRepository : IRepository
+{
+    private readonly IDbConnection _connection;
+    private readonly ILogger<DapperRepository> _logger;
+
+    public DapperRepository(string connectionString, ILogger<DapperRepository> logger)
+    {
+        _connection = new SqlConnection(connectionString);
+        _logger = logger;
+    }
+
+    /// <summary>
+    /// Получение имени таблицы из атрибута [Table] или имени класса
+    /// </summary>
+    private string GetTableName<T>()
+    {
+        var type = typeof(T);
+        var tableAttr = type.GetCustomAttributes(typeof(TableAttribute), true)
+                           .FirstOrDefault() as TableAttribute;
+        
+        return tableAttr?.Name ?? type.Name;
+    }
+
+    /// <summary>
+    /// Поиск по полю с использованием Contains (LIKE %pattern%)
+    /// </summary>
+    /// <typeparam name="T">Тип сущности</typeparam>
+    /// <param name="searchTerm">Строка для поиска</param>
+    /// <param name="fieldName">Имя поля для поиска (по умолчанию "Name")</param>
+    /// <returns>Список найденных записей</returns>
+    public async Task<IEnumerable<T>> SearchAsync<T>(string searchTerm, string fieldName = "Name") where T : class
+    {
+        try
+        {
+            var tableName = GetTableName<T>();
+            var query = $"SELECT * FROM [{tableName}] WHERE [{fieldName}] LIKE @SearchTerm";
+            
+            var parameters = new { SearchTerm = $"%{searchTerm}%" };
+            
+            return await _connection.QueryAsync<T>(query, parameters);
+        }
+        catch (Exception ex)
+        {
+            _logger.LogError(ex, "Ошибка при поиске в таблице {TableName}", typeof(T).Name);
+            throw;
+        }
+    }
+
+    /// <summary>
+    /// Получение всех записей из таблицы
+    /// </summary>
+    public async Task<IEnumerable<T>> GetAllAsync<T>() where T : class
+    {
+        try
+        {
+            var tableName = GetTableName<T>();
+            var query = $"SELECT * FROM [{tableName}]";
+            
+            return await _connection.QueryAsync<T>(query);
+        }
+        catch (Exception ex)
+        {
+            _logger.LogError(ex, "Ошибка при получении всех записей из таблицы {TableName}", typeof(T).Name);
+            throw;
+        }
+    }
+
+    /// <summary>
+    /// Получение записи по ID
+    /// </summary>
+    public async Task<T?> GetByIdAsync<T>(int id) where T : class
+    {
+        try
+        {
+            var tableName = GetTableName<T>();
+            var query = $"SELECT * FROM [{tableName}] WHERE Id = @Id";
+            
+            var parameters = new { Id = id };
+            
+            return await _connection.QueryFirstOrDefaultAsync<T>(query, parameters);
+        }
+        catch (Exception ex)
+        {
+            _logger.LogError(ex, "Ошибка при получении записи по ID из таблицы {TableName}", typeof(T).Name);
+            throw;
+        }
+    }
+
+    /// <summary>
+    /// Поиск с пагинацией
+    /// </summary>
+    public async Task<(IEnumerable<T> Items, int TotalCount)> SearchWithPaginationAsync<T>(
+        string searchTerm, 
+        string fieldName = "Name", 
+        int pageNumber = 1, 
+        int pageSize = 10) where T : class
+    {
+        try
+        {
+            var tableName = GetTableName<T>();
+            
+            // Запрос для получения общего количества
+            var countQuery = $@"
+                SELECT COUNT(*) 
+                FROM [{tableName}] 
+                WHERE [{fieldName}] LIKE @SearchTerm";
+            
+            // Запрос для получения данных с пагинацией
+            var dataQuery = $@"
+                SELECT * 
+                FROM [{tableName}] 
+                WHERE [{fieldName}] LIKE @SearchTerm
+                ORDER BY Id
+                OFFSET @Offset ROWS 
+                FETCH NEXT @PageSize ROWS ONLY";
+            
+            var parameters = new 
+            { 
+                SearchTerm = $"%{searchTerm}%",
+                Offset = (pageNumber - 1) * pageSize,
+                PageSize = pageSize
+            };
+            
+            var totalCount = await _connection.ExecuteScalarAsync<int>(countQuery, parameters);
+            var items = await _connection.QueryAsync<T>(dataQuery, parameters);
+            
+            return (items, totalCount);
+        }
+        catch (Exception ex)
+        {
+            _logger.LogError(ex, "Ошибка при поиске с пагинацией в таблице {TableName}", typeof(T).Name);
+            throw;
+        }
+    }
+
+    /// <summary>
+    /// Поиск по нескольким полям
+    /// </summary>
+    public async Task<IEnumerable<T>> SearchByMultipleFieldsAsync<T>(
+        string searchTerm, 
+        params string[] fieldNames) where T : class
+    {
+        try
+        {
+            if (fieldNames == null || fieldNames.Length == 0)
+            {
+                fieldNames = new[] { "Name" };
+            }
+            
+            var tableName = GetTableName<T>();
+            var conditions = string.Join(" OR ", 
+                fieldNames.Select(f => $"[{f}] LIKE @SearchTerm"));
+            
+            var query = $"SELECT * FROM [{tableName}] WHERE {conditions}";
+            
+            var parameters = new { SearchTerm = $"%{searchTerm}%" };
+            
+            return await _connection.QueryAsync<T>(query, parameters);
+        }
+        catch (Exception ex)
+        {
+            _logger.LogError(ex, "Ошибка при поиске по нескольким полям в таблице {TableName}", typeof(T).Name);
+            throw;
+        }
+    }
+    
+    /// <summary>
+    /// Универсальный метод для выполнения произвольных запросов
+    /// </summary>
+    public async Task<IEnumerable<T>> QueryAsync<T>(string sql, object parameters = null) where T : class
+    {
+        try
+        {
+            return await _connection.QueryAsync<T>(sql, parameters);
+        }
+        catch (Exception ex)
+        {
+            _logger.LogError(ex, "Ошибка при выполнении запроса");
+            throw;
+        }
+    }
+
+    public void Dispose()
+    {
+        _connection?.Dispose();
+    }
+}
+
+// Примеры моделей с атрибутами Table
+[Table("Users")]
+public class User
+{
+    public int Id { get; set; }
+    public string Name { get; set; }
+    public string Email { get; set; }
+    public DateTime CreatedDate { get; set; }
+}
+
+[Table("Products")]
+public class Product
+{
+    public int Id { get; set; }
+    public string Name { get; set; }
+    public string Description { get; set; }
+    public decimal Price { get; set; }
+    public int CategoryId { get; set; }
+}
+
+[Table("Categories")]
+public class Category
+{
+    public int Id { get; set; }
+    public string Name { get; set; }
+    public string Description { get; set; }
+}
+
+// Пример использования в DI контейнере (Program.cs или Startup.cs)
+public static class ServiceExtensions
+{
+    public static IServiceCollection AddDapperRepository(this IServiceCollection services, string connectionString)
+    {
+        services.AddScoped<IRepository>(provider =>
+        {
+            var logger = provider.GetRequiredService<ILogger<DapperRepository>>();
+            return new DapperRepository(connectionString, logger);
+        });
+        
+        return services;
+    }
+}
+
+// Пример использования в контроллере
+[ApiController]
+[Route("api/[controller]")]
+public class UsersController : ControllerBase
+{
+    private readonly IRepository _repository;
+
+    public UsersController(IRepository repository)
+    {
+        _repository = repository;
+    }
+
+    [HttpGet("search")]
+    public async Task<IActionResult> SearchUsers(string term)
+    {
+        var users = await _repository.SearchAsync<User>(term, "Name");
+        return Ok(users);
+    }
+
+    [HttpGet("search-email")]
+    public async Task<IActionResult> SearchByEmail(string term)
+    {
+        var users = await _repository.SearchAsync<User>(term, "Email");
+        return Ok(users);
+    }
+
+    [HttpGet("search-multiple")]
+    public async Task<IActionResult> SearchByMultipleFields(string term)
+    {
+        var users = await _repository.SearchByMultipleFieldsAsync<User>(
+            term, "Name", "Email", "Description");
+        return Ok(users);
+    }
+
+    [HttpGet("paged")]
+    public async Task<IActionResult> GetPagedUsers(string term, int page = 1, int pageSize = 10)
+    {
+        var result = await _repository.SearchWithPaginationAsync<User>(term, "Name", page, pageSize);
+        return Ok(new
+        {
+            result.Items,
+            result.TotalCount,
+            Page = page,
+            PageSize = pageSize,
+            TotalPages = (int)Math.Ceiling(result.TotalCount / (double)pageSize)
+        });
+    }
+}
+```
+
+## Установка необходимых пакетов:
+
+```xml
+<!-- .csproj файл -->
+<PackageReference Include="Dapper" Version="2.1.35" />
+<PackageReference Include="Microsoft.Data.SqlClient" Version="5.2.0" />
+<PackageReference Include="System.ComponentModel.Annotations" Version="5.0.0" />
+```
+
+## Основные особенности реализации:
+
+1. **Гибкое получение имени таблицы**: используется атрибут `[Table]`, если он задан, или имя класса в противном случае.
+
+2. **Безопасность от SQL-инъекций**: все параметры передаются через объект parameters, Dapper корректно их экранирует.
+
+3. **Поддержка разных сценариев поиска**:
+   - Поиск по одному полю с `Contains`
+   - Поиск по нескольким полям
+   - Поиск с пагинацией
+   - Универсальный метод для произвольных запросов
+
+4. **Обработка ошибок**: все методы обернуты в try-catch с логированием.
+
+5. **Расширяемость**: можно легко добавить дополнительные методы для специфичных запросов.
+
+## Использование:
+
+```csharp
+// Пример использования в сервисе
+public class UserService
+{
+    private readonly IRepository _repository;
+
+    public UserService(IRepository repository)
+    {
+        _repository = repository;
+    }
+
+    public async Task<IEnumerable<User>> FindUsersByName(string name)
+    {
+        return await _repository.SearchAsync<User>(name, "Name");
+    }
+
+    public async Task<IEnumerable<Product>> FindProductsByDescription(string description)
+    {
+        return await _repository.SearchAsync<Product>(description, "Description");
+    }
+
+    public async Task<IEnumerable<Category>> GetAllCategories()
+    {
+        return await _repository.GetAllAsync<Category>();
+    }
+}
+```
+
+Это решение легко расширяется под конкретные нужды проекта и обеспечивает безопасную работу с базой данных через Dapper.
