@@ -1,0 +1,745 @@
+Отлично! Добавим в компонент `CounterpartiesTab`:
+
+1. **Выбор контрагента** — по клику на строку таблицы.
+2. **Визуальное выделение** выбранной строки.
+3. **Кнопку "Выбрать"**, которая передаёт `id` и `name` выбранного контрагента в родительский компонент.
+4. **Отображение выбранного контрагента** внизу окна (для демонстрации).
+
+Для этого компонент `CounterpartiesTab` будет принимать **коллбэк `onSelect`** и, опционально, отображать информацию о выборе.
+
+---
+
+### ✅ Обновлённый `CounterpartiesTab.tsx`
+
+```tsx
+// CounterpartiesTab.tsx
+import React, { useState, useEffect } from 'react';
+
+interface Counterparty {
+  id: string;
+  name: string;
+  inn: string;
+  address: string;
+  hasChildren: boolean;
+}
+
+// Тип пропсов
+interface CounterpartiesTabProps {
+  onSelect?: (counterparty: { id: string; name: string }) => void;
+}
+
+const api = {
+  fetchCounterparties: async (parentId: string | null = null, search: string = ''): Promise<Counterparty[]> => {
+    await new Promise((r) => setTimeout(r, 400));
+    if (parentId === '1') {
+      return [
+        { id: '11', name: 'Филиал ООО "Ромашка" (Москва)', inn: '7712345678', address: 'г. Москва, ул. Ленина, 10', hasChildren: false },
+        { id: '12', name: 'Филиал ООО "Ромашка" (СПб)', inn: '7812345679', address: 'г. Санкт-Петербург, Невский пр., 5', hasChildren: false },
+      ];
+    }
+    return [
+      { id: '1', name: 'ООО "Ромашка"', inn: '7701234567', address: 'г. Москва, ул. Тверская, 1', hasChildren: true },
+      { id: '2', name: 'АО "Подсолнух"', inn: '7709876543', address: 'г. Москва, ул. Арбат, 15', hasChildren: false },
+      { id: '3', name: 'ИП Иванов', inn: '771122334455', address: 'г. Казань, Баумана, 20', hasChildren: false },
+    ].filter(item =>
+      item.name.toLowerCase().includes(search.toLowerCase()) ||
+      item.inn.includes(search)
+    );
+  },
+};
+
+const CounterpartiesTab: React.FC<CounterpartiesTabProps> = ({ onSelect }) => {
+  const [counterparties, setCounterparties] = useState<Counterparty[]>([]);
+  const [loading, setLoading] = useState(true);
+  const [searchQuery, setSearchQuery] = useState('');
+  const [parentId, setParentId] = useState<string | null>(null);
+  const [selectedId, setSelectedId] = useState<string | null>(null);
+
+  const selectedCounterparty = counterparties.find(c => c.id === selectedId);
+
+  useEffect(() => {
+    const load = async () => {
+      setLoading(true);
+      try {
+        const data = await api.fetchCounterparties(parentId, searchQuery);
+        setCounterparties(data);
+        // Сбросить выбор при смене данных
+        setSelectedId(null);
+      } catch (err) {
+        console.error('Ошибка загрузки контрагентов:', err);
+        setCounterparties([]);
+      } finally {
+        setLoading(false);
+      }
+    };
+    load();
+  }, [parentId, searchQuery]);
+
+  const handleViewChildren = (id: string) => {
+    setParentId(id);
+    setSearchQuery('');
+  };
+
+  const handleGoBack = () => {
+    setParentId(null);
+    setSearchQuery('');
+  };
+
+  const handleRowClick = (id: string) => {
+    setSelectedId(id === selectedId ? null : id); // переключение выделения
+  };
+
+  const handleSelect = () => {
+    if (selectedCounterparty && onSelect) {
+      onSelect({ id: selectedCounterparty.id, name: selectedCounterparty.name });
+    }
+  };
+
+  return (
+    <div>
+      {parentId && (
+        <button onClick={handleGoBack} style={{ marginBottom: '12px' }}>
+          ← Назад к родителям
+        </button>
+      )}
+
+      <input
+        type="text"
+        placeholder="Поиск по названию или ИНН..."
+        value={searchQuery}
+        onChange={(e) => setSearchQuery(e.target.value)}
+        style={{
+          width: '100%',
+          padding: '8px',
+          marginBottom: '16px',
+          borderRadius: '4px',
+          border: '1px solid #ccc',
+        }}
+      />
+
+      {loading ? (
+        <p>Загрузка...</p>
+      ) : (
+        <table style={{ width: '100%', borderCollapse: 'collapse' }}>
+          <thead>
+            <tr>
+              <th style={styles.th}>Наименование</th>
+              <th style={styles.th}>ИНН</th>
+              <th style={styles.th}>Адрес</th>
+              <th style={styles.th}></th>
+            </tr>
+          </thead>
+          <tbody>
+            {counterparties.length === 0 ? (
+              <tr>
+                <td colSpan={4} style={{ textAlign: 'center', padding: '12px' }}>
+                  Нет данных
+                </td>
+              </tr>
+            ) : (
+              counterparties.map((item) => (
+                <tr
+                  key={item.id}
+                  onClick={() => handleRowClick(item.id)}
+                  style={{
+                    ...styles.tr,
+                    backgroundColor: selectedId === item.id ? '#e7f1ff' : 'white',
+                    cursor: 'pointer',
+                  }}
+                >
+                  <td style={styles.td}>{item.name}</td>
+                  <td style={styles.td}>{item.inn}</td>
+                  <td style={styles.td}>{item.address}</td>
+                  <td style={styles.td}>
+                    {item.hasChildren && (
+                      <button
+                        onClick={(e) => {
+                          e.stopPropagation(); // не снимать выделение
+                          handleViewChildren(item.id);
+                        }}
+                        style={{
+                          background: 'none',
+                          border: 'none',
+                          cursor: 'pointer',
+                          fontSize: '18px',
+                          color: '#007bff',
+                        }}
+                      >
+                        →
+                      </button>
+                    )}
+                  </td>
+                </tr>
+              ))
+            )}
+          </tbody>
+        </table>
+      )}
+
+      {/* Кнопка выбора */}
+      <div style={{ marginTop: '20px' }}>
+        {selectedCounterparty && (
+          <div style={{ marginBottom: '12px', padding: '8px', backgroundColor: '#f8f9fa', borderRadius: '4px' }}>
+            Выбран: <strong>{selectedCounterparty.name}</strong> (ID: {selectedCounterparty.id})
+          </div>
+        )}
+
+        <button
+          type="button"
+          onClick={handleSelect}
+          disabled={!selectedCounterparty}
+          style={{
+            padding: '8px 16px',
+            backgroundColor: selectedCounterparty ? '#28a745' : '#6c757d',
+            color: 'white',
+            border: 'none',
+            borderRadius: '4px',
+            cursor: selectedCounterparty ? 'pointer' : 'not-allowed',
+          }}
+        >
+          Выбрать контрагента
+        </button>
+      </div>
+    </div>
+  );
+};
+
+const styles = {
+  th: {
+    backgroundColor: '#f8f9fa',
+    padding: '10px',
+    textAlign: 'left' as const,
+    borderBottom: '2px solid #dee2e6',
+  },
+  tr: {
+    borderBottom: '1px solid #dee2e6',
+  },
+  td: {
+    padding: '10px',
+  },
+};
+
+export default CounterpartiesTab;
+```
+
+---
+
+### 🔌 Как использовать в родительском модальном окне
+
+В `ModalTabsApp.tsx`:
+
+```tsx
+// Внутри ModalTabsApp
+const [selectedCounterparty, setSelectedCounterparty] = useState<{ id: string; name: string } | null>(null);
+
+// ...
+
+{
+  id: 0,
+  title: 'Контрагенты',
+  component: <CounterpartiesTab onSelect={setSelectedCounterparty} />,
+},
+
+// Где-то внизу модального окна (например, под содержимым вкладки):
+{selectedCounterparty && (
+  <div style={{ marginTop: '20px', padding: '10px', backgroundColor: '#d4edda', borderRadius: '4px' }}>
+    Выбран контрагент: <strong>{selectedCounterparty.name}</strong> (ID: {selectedCounterparty.id})
+  </div>
+)}
+```
+
+> 💡 Чтобы вывод был **внутри модального окна, но вне вкладок**, можно вынести состояние `selectedCounterparty` в `ModalTabsApp` и отображать его **под `<div className="modal-content">`**, но **над кнопками вкладок**.
+
+Пример структуры в `ModalTabsApp`:
+
+```tsx
+return (
+  <div className="modal-overlay">
+    <div className="modal-content">
+      <h2>{activeTab.title}</h2>
+      <div className="tab-content">{activeTab.component}</div>
+
+      {/* Отображение выбранного контрагента — только если есть выбор */}
+      {selectedCounterparty && activeTabId === 0 && (
+        <div style={{ marginTop: '20px', padding: '10px', backgroundColor: '#e9ecef', borderRadius: '4px' }}>
+          Выбрано: {selectedCounterparty.name} (ID: {selectedCounterparty.id})
+        </div>
+      )}
+    </div>
+
+    <div className="tab-buttons">...</div>
+  </div>
+);
+```
+
+---
+
+### ✅ Итог:
+- Пользователь может **кликнуть по строке** — она выделяется.
+- Можно **перейти в филиалы**, не теряя возможности выбора.
+- Кнопка **«Выбрать»** передаёт данные вверх.
+- Родитель может **реагировать на выбор** (например, закрывать модалку, заполнять форму и т.п.).
+
+Если нужно — могу добавить **множественный выбор**, **очистку выбора**, или **автоматический выбор при двойном клике**.
+
+
+Отлично! Добавим:
+
+1. **Очистку выбора** — кнопка «Сбросить выбор».
+2. **Автоматический выбор при двойном клике** — сразу вызывает `onSelect` и очищает выделение.
+
+---
+
+### ✅ Обновлённый `CounterpartiesTab.tsx`
+
+```tsx
+// CounterpartiesTab.tsx
+import React, { useState, useEffect } from 'react';
+
+interface Counterparty {
+  id: string;
+  name: string;
+  inn: string;
+  address: string;
+  hasChildren: boolean;
+}
+
+interface CounterpartiesTabProps {
+  onSelect?: (counterparty: { id: string; name: string }) => void;
+}
+
+const api = {
+  fetchCounterparties: async (parentId: string | null = null, search: string = ''): Promise<Counterparty[]> => {
+    await new Promise((r) => setTimeout(r, 400));
+    if (parentId === '1') {
+      return [
+        { id: '11', name: 'Филиал ООО "Ромашка" (Москва)', inn: '7712345678', address: 'г. Москва, ул. Ленина, 10', hasChildren: false },
+        { id: '12', name: 'Филиал ООО "Ромашка" (СПб)', inn: '7812345679', address: 'г. Санкт-Петербург, Невский пр., 5', hasChildren: false },
+      ];
+    }
+    return [
+      { id: '1', name: 'ООО "Ромашка"', inn: '7701234567', address: 'г. Москва, ул. Тверская, 1', hasChildren: true },
+      { id: '2', name: 'АО "Подсолнух"', inn: '7709876543', address: 'г. Москва, ул. Арбат, 15', hasChildren: false },
+      { id: '3', name: 'ИП Иванов', inn: '771122334455', address: 'г. Казань, Баумана, 20', hasChildren: false },
+    ].filter(item =>
+      item.name.toLowerCase().includes(search.toLowerCase()) ||
+      item.inn.includes(search)
+    );
+  },
+};
+
+const CounterpartiesTab: React.FC<CounterpartiesTabProps> = ({ onSelect }) => {
+  const [counterparties, setCounterparties] = useState<Counterparty[]>([]);
+  const [loading, setLoading] = useState(true);
+  const [searchQuery, setSearchQuery] = useState('');
+  const [parentId, setParentId] = useState<string | null>(null);
+  const [selectedId, setSelectedId] = useState<string | null>(null);
+
+  const selectedCounterparty = counterparties.find(c => c.id === selectedId);
+
+  useEffect(() => {
+    const load = async () => {
+      setLoading(true);
+      try {
+        const data = await api.fetchCounterparties(parentId, searchQuery);
+        setCounterparties(data);
+        setSelectedId(null); // сброс при обновлении списка
+      } catch (err) {
+        console.error('Ошибка загрузки контрагентов:', err);
+        setCounterparties([]);
+      } finally {
+        setLoading(false);
+      }
+    };
+    load();
+  }, [parentId, searchQuery]);
+
+  const handleViewChildren = (id: string) => {
+    setParentId(id);
+    setSearchQuery('');
+  };
+
+  const handleGoBack = () => {
+    setParentId(null);
+    setSearchQuery('');
+  };
+
+  const handleRowClick = (id: string) => {
+    setSelectedId(id === selectedId ? null : id);
+  };
+
+  const handleRowDoubleClick = (counterparty: Counterparty) => {
+    if (onSelect) {
+      onSelect({ id: counterparty.id, name: counterparty.name });
+    }
+    setSelectedId(null); // сбросить выделение после выбора
+  };
+
+  const handleSelect = () => {
+    if (selectedCounterparty && onSelect) {
+      onSelect({ id: selectedCounterparty.id, name: selectedCounterparty.name });
+      setSelectedId(null); // опционально: сброс после выбора
+    }
+  };
+
+  const handleClearSelection = () => {
+    setSelectedId(null);
+  };
+
+  return (
+    <div>
+      {parentId && (
+        <button onClick={handleGoBack} style={{ marginBottom: '12px' }}>
+          ← Назад к родителям
+        </button>
+      )}
+
+      <input
+        type="text"
+        placeholder="Поиск по названию или ИНН..."
+        value={searchQuery}
+        onChange={(e) => setSearchQuery(e.target.value)}
+        style={{
+          width: '100%',
+          padding: '8px',
+          marginBottom: '16px',
+          borderRadius: '4px',
+          border: '1px solid #ccc',
+        }}
+      />
+
+      {loading ? (
+        <p>Загрузка...</p>
+      ) : (
+        <table style={{ width: '100%', borderCollapse: 'collapse' }}>
+          <thead>
+            <tr>
+              <th style={styles.th}>Наименование</th>
+              <th style={styles.th}>ИНН</th>
+              <th style={styles.th}>Адрес</th>
+              <th style={styles.th}></th>
+            </tr>
+          </thead>
+          <tbody>
+            {counterparties.length === 0 ? (
+              <tr>
+                <td colSpan={4} style={{ textAlign: 'center', padding: '12px' }}>
+                  Нет данных
+                </td>
+              </tr>
+            ) : (
+              counterparties.map((item) => (
+                <tr
+                  key={item.id}
+                  onClick={() => handleRowClick(item.id)}
+                  onDoubleClick={() => handleRowDoubleClick(item)}
+                  style={{
+                    ...styles.tr,
+                    backgroundColor: selectedId === item.id ? '#e7f1ff' : 'white',
+                    cursor: 'pointer',
+                  }}
+                >
+                  <td style={styles.td}>{item.name}</td>
+                  <td style={styles.td}>{item.inn}</td>
+                  <td style={styles.td}>{item.address}</td>
+                  <td style={styles.td}>
+                    {item.hasChildren && (
+                      <button
+                        onClick={(e) => {
+                          e.stopPropagation(); // не мешать клику по строке
+                          e.preventDefault();
+                          handleViewChildren(item.id);
+                        }}
+                        style={{
+                          background: 'none',
+                          border: 'none',
+                          cursor: 'pointer',
+                          fontSize: '18px',
+                          color: '#007bff',
+                        }}
+                      >
+                        →
+                      </button>
+                    )}
+                  </td>
+                </tr>
+              ))
+            )}
+          </tbody>
+        </table>
+      )}
+
+      {/* Управление выбором */}
+      <div style={{ marginTop: '20px', display: 'flex', gap: '10px', flexWrap: 'wrap' }}>
+        {selectedCounterparty && (
+          <div style={{ padding: '8px', backgroundColor: '#f8f9fa', borderRadius: '4px' }}>
+            Выбран: <strong>{selectedCounterparty.name}</strong>
+          </div>
+        )}
+
+        <button
+          type="button"
+          onClick={handleSelect}
+          disabled={!selectedCounterparty}
+          style={{
+            padding: '8px 12px',
+            backgroundColor: selectedCounterparty ? '#28a745' : '#6c757d',
+            color: 'white',
+            border: 'none',
+            borderRadius: '4px',
+            cursor: selectedCounterparty ? 'pointer' : 'not-allowed',
+          }}
+        >
+          Выбрать
+        </button>
+
+        <button
+          type="button"
+          onClick={handleClearSelection}
+          disabled={!selectedCounterparty}
+          style={{
+            padding: '8px 12px',
+            backgroundColor: selectedCounterparty ? '#dc3545' : '#6c757d',
+            color: 'white',
+            border: 'none',
+            borderRadius: '4px',
+            cursor: selectedCounterparty ? 'pointer' : 'not-allowed',
+          }}
+        >
+          Сбросить выбор
+        </button>
+      </div>
+    </div>
+  );
+};
+
+const styles = {
+  th: {
+    backgroundColor: '#f8f9fa',
+    padding: '10px',
+    textAlign: 'left' as const,
+    borderBottom: '2px solid #dee2e6',
+  },
+  tr: {
+    borderBottom: '1px solid #dee2e6',
+  },
+  td: {
+    padding: '10px',
+  },
+};
+
+export default CounterpartiesTab;
+```
+
+---
+
+### 🔧 Что изменилось:
+
+| Функция | Реализация |
+|--------|-----------|
+| **Двойной клик** | `onDoubleClick` → вызывает `onSelect` и сбрасывает выделение |
+| **Очистка выбора** | Кнопка «Сбросить выбор» → `setSelectedId(null)` |
+| **Сброс при переходе** | При смене уровня (родитель/филиал) или фильтрации — выбор сбрасывается |
+| **UX** | Кнопки управления выбором отключены, если ничего не выбрано |
+
+---
+
+### 💡 Советы по использованию:
+- При двойном клике **выбор сразу передаётся в родителя**, и модальное окно можно закрывать (если нужно).
+- Если вы хотите **не сбрасывать выделение после обычного "Выбрать"**, уберите `setSelectedId(null)` из `handleSelect`.
+
+Хочешь, чтобы при двойном клике **модальное окно автоматически закрывалось**? Это делается через `onSelect` в родителе — просто вызывайте `setIsModalOpen(false)` там.
+
+
+Отлично! Добавим:
+
+1. **Кнопку открытия модального окна** в основном приложении.
+2. **Закрытие модального окна по двойному клику на контрагента** (внутри `CounterpartiesTab`).
+3. Передачу функции `onClose` в дочерние компоненты.
+
+---
+
+### 🧩 Шаг 1: Обновлённый `App.tsx` — кнопка открытия
+
+```tsx
+// App.tsx
+import React, { useState } from 'react';
+import ModalTabsApp from './ModalTabsApp';
+
+function App() {
+  const [isModalOpen, setIsModalOpen] = useState(false);
+
+  return (
+    <div style={{ padding: '20px' }}>
+      <h1>Моё приложение</h1>
+      <button
+        onClick={() => setIsModalOpen(true)}
+        style={{
+          padding: '10px 20px',
+          backgroundColor: '#007bff',
+          color: 'white',
+          border: 'none',
+          borderRadius: '4px',
+          cursor: 'pointer',
+        }}
+      >
+        Открыть выбор контрагента
+      </button>
+
+      {isModalOpen && (
+        <ModalTabsApp
+          isOpen={isModalOpen}
+          onClose={() => setIsModalOpen(false)}
+        />
+      )}
+    </div>
+  );
+}
+
+export default App;
+```
+
+---
+
+### 🧩 Шаг 2: Обновлённый `ModalTabsApp.tsx` — передаём `onClose`
+
+```tsx
+// ModalTabsApp.tsx
+import React, { useState } from 'react';
+import CounterpartiesTab from './CounterpartiesTab';
+import AddCounterpartyTab from './AddCounterpartyTab';
+import './ModalTabsApp.css';
+
+interface ModalTabsAppProps {
+  isOpen: boolean;
+  onClose: () => void;
+}
+
+const ModalTabsApp: React.FC<ModalTabsAppProps> = ({ onClose }) => {
+  const [activeTabId, setActiveTabId] = useState(0);
+  const [selectedCounterparty, setSelectedCounterparty] = useState<{ id: string; name: string } | null>(null);
+
+  // Обработчик выбора: можно закрыть модалку сразу
+  const handleSelectCounterparty = (counterparty: { id: string; name: string }) => {
+    setSelectedCounterparty(counterparty);
+    // Опционально: автоматически закрыть после выбора
+    // onClose();
+  };
+
+  // Также можно закрыть по Esc или клику вне — но сейчас только по логике
+  const tabs = [
+    {
+      id: 0,
+      title: 'Контрагенты',
+      component: (
+        <CounterpartiesTab
+          onSelect={handleSelectCounterparty}
+          onClose={onClose} // ← передаём onClose в таб
+        />
+      ),
+    },
+    {
+      id: 1,
+      title: 'Добавить',
+      component: <AddCounterpartyTab />,
+    },
+    {
+      id: 2,
+      title: 'Ещё',
+      component: <div>Третья вкладка</div>,
+    },
+  ];
+
+  const activeTab = tabs.find(tab => tab.id === activeTabId)!;
+
+  return (
+    <div className="modal-overlay" onClick={onClose}>
+      <div
+        className="modal-content"
+        onClick={(e) => e.stopPropagation()} // не закрывать при клике внутри
+      >
+        <h2>{activeTab.title}</h2>
+        <div className="tab-content">{activeTab.component}</div>
+
+        {/* Отображение выбранного контрагента под содержимым */}
+        {selectedCounterparty && activeTabId === 0 && (
+          <div style={{ marginTop: '20px', padding: '10px', backgroundColor: '#e9ecef', borderRadius: '4px' }}>
+            Выбрано: <strong>{selectedCounterparty.name}</strong> (ID: {selectedCounterparty.id})
+          </div>
+        )}
+      </div>
+
+      <div className="tab-buttons">
+        {tabs.map((tab) => (
+          <button
+            key={tab.id}
+            onClick={() => setActiveTabId(tab.id)}
+            className={activeTabId === tab.id ? 'active' : ''}
+          >
+            {tab.title}
+          </button>
+        ))}
+      </div>
+    </div>
+  );
+};
+
+export default ModalTabsApp;
+```
+
+---
+
+### 🧩 Шаг 3: Обновлённый `CounterpartiesTab.tsx` — используем `onClose`
+
+Добавим пропс `onClose` и вызываем его при **двойном клике**:
+
+```tsx
+// CounterpartiesTab.tsx (обновлённая часть пропсов и обработчика)
+interface CounterpartiesTabProps {
+  onSelect?: (counterparty: { id: string; name: string }) => void;
+  onClose?: () => void; // ← новое
+}
+
+// ...
+
+const CounterpartiesTab: React.FC<CounterpartiesTabProps> = ({ onSelect, onClose }) => {
+
+  // ...
+
+  const handleRowDoubleClick = (counterparty: Counterparty) => {
+    if (onSelect) {
+      onSelect({ id: counterparty.id, name: counterparty.name });
+    }
+    // Закрываем модальное окно
+    if (onClose) {
+      onClose();
+    }
+  };
+
+  // ...
+};
+```
+
+> 💡 Теперь при **двойном клике**:
+> - Вызывается `onSelect` (родитель узнаёт о выборе),
+> - И сразу закрывается модальное окно через `onClose`.
+
+---
+
+### ✅ Итог поведения:
+
+| Действие | Результат |
+|--------|---------|
+| Клик по кнопке «Открыть выбор контрагента» | Открывается модальное окно с 3 вкладками |
+| Вкладка «Контрагенты» → клик по строке | Строка выделяется |
+| Двойной клик по строке | Выбирается контрагент **и модальное окно закрывается** |
+| Кнопка «Выбрать» | Только передаёт выбор, окно остаётся открытым |
+| Клик вне модального окна | Окно закрывается (благодаря `onClick={onClose}` на overlay) |
+
+---
+
+### 💡 Дополнительно (по желанию):
+- Чтобы **не закрывалось по клику вне**, уберите `onClick={onClose}` с `.modal-overlay`.
+- Чтобы **закрывалось по `Esc`**, добавьте `useEffect` с `keydown` listener.
+
+Хочешь добавить **поддержку клавиши Esc** или **анимацию появления**?
