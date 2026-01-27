@@ -782,3 +782,573 @@ const tabs: TabConfig[] = [
 - Отправлять данные через `fetch`/`axios`.
 
 Если нужно — могу добавить **интеграцию с API**, **маску ввода с разделителями**, или **поддержку 12-значного ИНН для ИП**.
+
+
+#######################
+
+Отлично! Добавим **список выбранных контрагентов** внизу модального окна (вне вкладок), который:
+
+- Общ для всех вкладок.
+- Позволяет выбирать контрагентов из таблицы (первая вкладка).
+- Позволяет добавлять новых контрагентов через форму (вторая вкладка).
+- Имеет кнопку **«Очистить список»**.
+
+Для этого состояние списка выбранных контрагентов должно управляться **в родительском компоненте `ModalTabsApp`**, а дочерние вкладки будут получать функции для добавления.
+
+---
+
+### 🧩 Шаг 1: Обновлённый `ModalTabsApp.tsx`
+
+```tsx
+// ModalTabsApp.tsx
+import React, { useState } from 'react';
+import './ModalTabsApp.css';
+
+// Типы
+interface Counterparty {
+  id: string;
+  name: string;
+  inn: string;
+  address: string;
+}
+
+interface TabConfig {
+  id: number;
+  title: string;
+  component: React.ReactNode;
+}
+
+interface ModalTabsAppProps {
+  onClose: () => void;
+}
+
+const ModalTabsApp = ({ onClose }: ModalTabsAppProps) => {
+  const [activeTabId, setActiveTabId] = useState(0);
+  const [selectedCounterparties, setSelectedCounterparties] = useState<Counterparty[]>([]);
+
+  // Функция для добавления контрагента в общий список
+  const addSelectedCounterparty = (counterparty: Counterparty) => {
+    // Избегаем дубликатов по id
+    if (!selectedCounterparties.some(c => c.id === counterparty.id)) {
+      setSelectedCounterparties(prev => [...prev, counterparty]);
+    }
+  };
+
+  const clearSelection = () => {
+    setSelectedCounterparties([]);
+  };
+
+  const tabs: TabConfig[] = [
+    {
+      id: 0,
+      title: 'Контрагенты',
+      component: <CounterpartiesTab onAdd={addSelectedCounterparty} />,
+    },
+    {
+      id: 1,
+      title: 'Добавить',
+      component: <AddCounterpartyTab onAdd={addSelectedCounterparty} />,
+    },
+    {
+      id: 2,
+      title: 'Отчёты',
+      component: <div>Скоро здесь будут отчёты</div>,
+    },
+  ];
+
+  const activeTab = tabs.find(tab => tab.id === activeTabId)!;
+
+  return (
+    <div className="modal-overlay" onClick={onClose}>
+      <div className="modal-content" onClick={(e) => e.stopPropagation()}>
+        {/* Крестик */}
+        <button className="modal-close-button" onClick={onClose}>
+          ×
+        </button>
+
+        <h2 style={{ marginBottom: '16px' }}>{activeTab.title}</h2>
+        <div className="tab-content">{activeTab.component}</div>
+      </div>
+
+      {/* Кнопки вкладок */}
+      <div className="tab-buttons">
+        {tabs.map((tab) => (
+          <button
+            key={tab.id}
+            onClick={() => setActiveTabId(tab.id)}
+            className={activeTabId === tab.id ? 'active' : ''}
+          >
+            {tab.title}
+          </button>
+        ))}
+      </div>
+
+      {/* Список выбранных контрагентов — ВНИЗУ МОДАЛЬНОГО ОКНА */}
+      <div className="selected-counterparties-panel">
+        <div className="selected-header">
+          <h3>Выбранные контрагенты ({selectedCounterparties.length})</h3>
+          <button onClick={clearSelection} className="clear-button">
+            Очистить
+          </button>
+        </div>
+        {selectedCounterparties.length === 0 ? (
+          <p>Нет выбранных контрагентов</p>
+        ) : (
+          <ul className="selected-list">
+            {selectedCounterparties.map((c) => (
+              <li key={c.id} className="selected-item">
+                <strong>{c.name}</strong> | ИНН: {c.inn} | {c.address}
+              </li>
+            ))}
+          </ul>
+        )}
+      </div>
+    </div>
+  );
+};
+
+// Ленивые импорты (или обычные, если не используете code splitting)
+const CounterpartiesTab = React.lazy(() => import('./CounterpartiesTab'));
+const AddCounterpartyTab = React.lazy(() => import('./AddCounterpartyTab'));
+
+export default ModalTabsApp;
+```
+
+---
+
+### 🎨 Шаг 2: Добавим стили для панели выбранных (`ModalTabsApp.css`)
+
+```css
+/* ... предыдущие стили ... */
+
+/* Панель выбранных контрагентов внизу */
+.selected-counterparties-panel {
+  position: fixed;
+  bottom: 100px; /* выше кнопок вкладок */
+  left: 20px;
+  right: 20px;
+  background: white;
+  border: 1px solid #ddd;
+  border-radius: 8px;
+  padding: 12px;
+  box-shadow: 0 -2px 8px rgba(0,0,0,0.1);
+  max-height: 200px;
+  overflow-y: auto;
+  z-index: 1001;
+}
+
+.selected-header {
+  display: flex;
+  justify-content: space-between;
+  align-items: center;
+  margin-bottom: 8px;
+}
+
+.clear-button {
+  padding: 4px 10px;
+  background: #dc3545;
+  color: white;
+  border: none;
+  border-radius: 4px;
+  cursor: pointer;
+  font-size: 14px;
+}
+
+.clear-button:hover {
+  background: #c82333;
+}
+
+.selected-list {
+  list-style: none;
+  padding: 0;
+  margin: 0;
+}
+
+.selected-item {
+  padding: 6px 0;
+  border-bottom: 1px solid #eee;
+  font-size: 14px;
+}
+
+.selected-item:last-child {
+  border-bottom: none;
+}
+```
+
+---
+
+### 🔧 Шаг 3: Обновление `CounterpartiesTab.tsx` — добавление выбора
+
+В таблице добавим **кнопку "Выбрать"** в каждую строку:
+
+```tsx
+// Внутри CounterpartiesTab.tsx, в рендере строки таблицы
+// Замените стрелку → на кнопку "Выбрать", или добавьте её
+
+// Добавьте пропс:
+interface CounterpartiesTabProps {
+  onAdd: (counterparty: Counterparty) => void;
+}
+
+// Внутри map:
+{counterparties.map((item) => (
+  <tr key={item.id} style={styles.tr}>
+    <td style={styles.td}>{item.name}</td>
+    <td style={styles.td}>{item.inn}</td>
+    <td style={styles.td}>{item.address}</td>
+    <td style={styles.td}>
+      {/* Стрелка для филиалов */}
+      {item.hasChildren && (
+        <button onClick={() => handleViewChildren(item.id)} style={{ marginRight: '8px' }}>
+          →
+        </button>
+      )}
+      {/* Кнопка выбора */}
+      <button
+        onClick={() => onAdd(item)}
+        style={{
+          background: '#28a745',
+          color: 'white',
+          border: 'none',
+          borderRadius: '4px',
+          padding: '4px 8px',
+          cursor: 'pointer',
+          fontSize: '12px',
+        }}
+      >
+        Выбрать
+      </button>
+    </td>
+  </tr>
+))}
+```
+
+И не забудьте принять `onAdd` в компоненте:
+
+```tsx
+const CounterpartiesTab = ({ onAdd }: CounterpartiesTabProps) => {
+  // ... остальной код
+};
+```
+
+---
+
+### 🔧 Шаг 4: Обновление `AddCounterpartyTab.tsx` — добавление после создания
+
+В форме, после успешного добавления, вызываем `onAdd`:
+
+```tsx
+// Внутри AddCounterpartyTab.tsx
+
+interface AddCounterpartyTabProps {
+  onAdd: (counterparty: Counterparty) => void;
+}
+
+// В handleSubmit:
+if (validate()) {
+  const newCounterparty: Counterparty = {
+    id: 'temp-' + Date.now(), // в реальности — ID с сервера
+    name: formData.name,
+    inn: formData.inn,
+    address: formData.address,
+    // можно добавить email и т.д., если нужно
+  };
+  onAdd(newCounterparty);
+  alert('Контрагент добавлен в список!');
+  // Опционально: сбросить форму
+  setFormData(initialState);
+}
+```
+
+---
+
+### ✅ Результат:
+- При клике **«Выбрать»** в таблице — контрагент попадает в общий список.
+- При создании нового — он тоже добавляется в список.
+- Список отображается **внизу модального окна**, над кнопками вкладок.
+- Есть кнопка **«Очистить»**.
+
+---
+
+Если нужно:
+- Удалять отдельные элементы из списка — могу добавить крестик у каждого.
+- Передавать весь список наверх при закрытии — просто вызывайте `onClose(selectedCounterparties)`.
+
+Хочешь реализовать **множественный выбор через чекбоксы** или **экспорт списка**?
+
+Отлично! Реализуем **множественный выбор контрагентов через чекбоксы** в таблице первой вкладки. Пользователь сможет:
+
+- Отмечать несколько строк.
+- Нажимать кнопку **«Добавить выбранные»**, чтобы добавить их в общий список.
+- Чекбоксы будут синхронизированы с состоянием (включая «Выбрать всё»).
+
+---
+
+### 🧩 Шаг 1: Обновлённый `CounterpartiesTab.tsx`
+
+```tsx
+// CounterpartiesTab.tsx
+import React, { useState, useEffect, useCallback } from 'react';
+
+interface Counterparty {
+  id: string;
+  name: string;
+  inn: string;
+  address: string;
+  hasChildren: boolean;
+}
+
+interface CounterpartiesTabProps {
+  onAdd: (counterparties: Counterparty[]) => void;
+}
+
+const api = {
+  fetchCounterparties: async (parentId: string | null = null, search: string = '') => {
+    await new Promise((r) => setTimeout(r, 300));
+    if (parentId === '1') {
+      return [
+        { id: '11', name: 'Филиал ООО "Ромашка" (Москва)', inn: '7712345678', address: 'г. Москва, ул. Ленина, 10', hasChildren: false },
+        { id: '12', name: 'Филиал ООО "Ромашка" (СПб)', inn: '7812345679', address: 'г. Санкт-Петербург, Невский пр., 5', hasChildren: false },
+      ];
+    }
+    return [
+      { id: '1', name: 'ООО "Ромашка"', inn: '7701234567', address: 'г. Москва, ул. Тверская, 1', hasChildren: true },
+      { id: '2', name: 'АО "Подсолнух"', inn: '7709876543', address: 'г. Москва, ул. Арбат, 15', hasChildren: false },
+      { id: '3', name: 'ИП Иванов', inn: '771122334455', address: 'г. Казань, Баумана, 20', hasChildren: false },
+    ].filter(item =>
+      item.name.toLowerCase().includes(search.toLowerCase()) ||
+      item.inn.includes(search)
+    );
+  },
+};
+
+const CounterpartiesTab = ({ onAdd }: CounterpartiesTabProps) => {
+  const [counterparties, setCounterparties] = useState<Counterparty[]>([]);
+  const [loading, setLoading] = useState(true);
+  const [searchQuery, setSearchQuery] = useState('');
+  const [parentId, setParentId] = useState<string | null>(null);
+  const [selectedIds, setSelectedIds] = useState<Set<string>>(new Set());
+
+  // Загрузка данных
+  useEffect(() => {
+    const load = async () => {
+      setLoading(true);
+      try {
+        const data = await api.fetchCounterparties(parentId, searchQuery);
+        setCounterparties(data);
+        // Сбросить выделение при смене данных
+        setSelectedIds(new Set());
+      } catch (err) {
+        console.error(err);
+        setCounterparties([]);
+      } finally {
+        setLoading(false);
+      }
+    };
+    load();
+  }, [parentId, searchQuery]);
+
+  // Обработчики чекбоксов
+  const toggleSelect = useCallback((id: string) => {
+    setSelectedIds(prev => {
+      const newSet = new Set(prev);
+      if (newSet.has(id)) {
+        newSet.delete(id);
+      } else {
+        newSet.add(id);
+      }
+      return newSet;
+    });
+  }, []);
+
+  const toggleSelectAll = useCallback(() => {
+    if (selectedIds.size === counterparties.length) {
+      setSelectedIds(new Set());
+    } else {
+      setSelectedIds(new Set(counterparties.map(c => c.id)));
+    }
+  }, [counterparties, selectedIds.size]);
+
+  const handleAddSelected = () => {
+    const selected = counterparties.filter(c => selectedIds.has(c.id));
+    if (selected.length > 0) {
+      onAdd(selected);
+      setSelectedIds(new Set()); // сбросить после добавления
+    }
+  };
+
+  const handleViewChildren = (id: string) => {
+    setParentId(id);
+    setSearchQuery('');
+    setSelectedIds(new Set()); // сброс при переходе
+  };
+
+  const handleGoBack = () => {
+    setParentId(null);
+    setSearchQuery('');
+    setSelectedIds(new Set());
+  };
+
+  const isAllSelected = counterparties.length > 0 && selectedIds.size === counterparties.length;
+
+  return (
+    <div>
+      {parentId && (
+        <button onClick={handleGoBack} style={{ marginBottom: '12px' }}>
+          ← Назад к родителям
+        </button>
+      )}
+
+      <input
+        type="text"
+        placeholder="Поиск по названию или ИНН..."
+        value={searchQuery}
+        onChange={(e) => setSearchQuery(e.target.value)}
+        style={{
+          width: '100%',
+          padding: '8px',
+          marginBottom: '16px',
+          borderRadius: '4px',
+          border: '1px solid #ccc',
+        }}
+      />
+
+      {/* Кнопка "Добавить выбранные" */}
+      {counterparties.length > 0 && (
+        <button
+          onClick={handleAddSelected}
+          disabled={selectedIds.size === 0}
+          style={{
+            marginBottom: '12px',
+            padding: '6px 12px',
+            backgroundColor: selectedIds.size > 0 ? '#28a745' : '#ddd',
+            color: 'white',
+            border: 'none',
+            borderRadius: '4px',
+            cursor: selectedIds.size > 0 ? 'pointer' : 'not-allowed',
+          }}
+        >
+          Добавить выбранные ({selectedIds.size})
+        </button>
+      )}
+
+      {loading ? (
+        <p>Загрузка...</p>
+      ) : (
+        <table style={{ width: '100%', borderCollapse: 'collapse' }}>
+          <thead>
+            <tr>
+              {/* Чекбокс "Выбрать всё" */}
+              <th style={styles.th}>
+                <input
+                  type="checkbox"
+                  checked={isAllSelected}
+                  onChange={toggleSelectAll}
+                />
+              </th>
+              <th style={styles.th}>Наименование</th>
+              <th style={styles.th}>ИНН</th>
+              <th style={styles.th}>Адрес</th>
+              <th style={styles.th}></th>
+            </tr>
+          </thead>
+          <tbody>
+            {counterparties.length === 0 ? (
+              <tr>
+                <td colSpan={5} style={{ textAlign: 'center', padding: '12px' }}>
+                  Нет данных
+                </td>
+              </tr>
+            ) : (
+              counterparties.map((item) => (
+                <tr key={item.id} style={styles.tr}>
+                  <td style={styles.td}>
+                    <input
+                      type="checkbox"
+                      checked={selectedIds.has(item.id)}
+                      onChange={() => toggleSelect(item.id)}
+                    />
+                  </td>
+                  <td style={styles.td}>{item.name}</td>
+                  <td style={styles.td}>{item.inn}</td>
+                  <td style={styles.td}>{item.address}</td>
+                  <td style={styles.td}>
+                    {item.hasChildren && (
+                      <button
+                        onClick={() => handleViewChildren(item.id)}
+                        style={{
+                          background: 'none',
+                          border: 'none',
+                          cursor: 'pointer',
+                          fontSize: '18px',
+                          color: '#007bff',
+                        }}
+                      >
+                        →
+                      </button>
+                    )}
+                  </td>
+                </tr>
+              ))
+            )}
+          </tbody>
+        </table>
+      )}
+    </div>
+  );
+};
+
+const styles = {
+  th: {
+    backgroundColor: '#f8f9fa',
+    padding: '10px',
+    textAlign: 'left' as const,
+    borderBottom: '2px solid #dee2e6',
+  },
+  tr: {
+    borderBottom: '1px solid #dee2e6',
+  },
+  td: {
+    padding: '10px',
+  },
+};
+
+export default CounterpartiesTab;
+```
+
+---
+
+### 🔧 Шаг 2: Обновление `ModalTabsApp.tsx` — поддержка массива
+
+Убедитесь, что `onAdd` принимает **массив**:
+
+```tsx
+// В ModalTabsApp.tsx
+const addSelectedCounterparty = (counterparties: Counterparty[]) => {
+  const unique = counterparties.filter(
+    c => !selectedCounterparties.some(sc => sc.id === c.id)
+  );
+  if (unique.length > 0) {
+    setSelectedCounterparties(prev => [...prev, ...unique]);
+  }
+};
+```
+
+(Это уже реализовано в предыдущей версии, но убедитесь, что тип `onAdd` — `(counterparties: Counterparty[]) => void`)
+
+---
+
+### ✅ Что изменилось:
+- В таблице появился **чекбокс в каждой строке** и **«Выбрать всё»** в шапке.
+- Кнопка **«Добавить выбранные (N)»** над таблицей.
+- После добавления — выделение сбрасывается.
+- При переходе к филиалам или смене поиска — выделение тоже сбрасывается (чтобы не было путаницы).
+
+---
+
+### 💡 Возможные улучшения:
+- Сохранять выделение при возврате к родителю (через стек).
+- Добавить индикацию уже выбранных контрагентов (например, серый фон строки).
+- Поддержка клавиатуры (Shift + клик для диапазона).
+
+Хочешь добавить **индикацию уже добавленных контрагентов** прямо в таблице?
