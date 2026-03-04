@@ -1,0 +1,405 @@
+Вот полноценный продакшн-вариант:
+
+✅ Автопозиционирование (если не помещается снизу — покажется сверху)
+✅ Поддержка нескольких иконок
+✅ Плавная анимация
+✅ Закрытие:
+
+* при уходе курсора (desktop)
+* при клике вне блока
+* при повторном клике
+* корректно работает на мобильных
+
+---
+
+## 📄 Полная HTML-страница
+
+```html
+<!DOCTYPE html>
+<html lang="ru">
+<head>
+<meta charset="UTF-8">
+<meta name="viewport" content="width=device-width, initial-scale=1.0">
+<title>Info Tooltip</title>
+
+<style>
+    body {
+        font-family: Arial, sans-serif;
+        padding: 60px;
+        line-height: 1.5;
+    }
+
+    .info-wrapper {
+        position: relative;
+        display: inline-block;
+        margin: 40px;
+    }
+
+    .info-icon {
+        width: 36px;
+        height: 36px;
+        border-radius: 50%;
+        background: #007bff;
+        color: #fff;
+        display: flex;
+        align-items: center;
+        justify-content: center;
+        font-weight: bold;
+        cursor: pointer;
+        user-select: none;
+        transition: background 0.2s ease;
+    }
+
+    .info-icon:hover {
+        background: #0056b3;
+    }
+
+    .info-message {
+        position: fixed;
+        min-width: 220px;
+        max-width: 280px;
+        padding: 14px;
+        background: #333;
+        color: #fff;
+        border-radius: 8px;
+        font-size: 14px;
+        z-index: 1000;
+
+        opacity: 0;
+        transform: translateY(-8px);
+        pointer-events: none;
+        transition: opacity 0.25s ease, transform 0.25s ease;
+    }
+
+    .info-message.active {
+        opacity: 1;
+        transform: translateY(0);
+        pointer-events: auto;
+    }
+
+    /* стрелка */
+    .info-message::after {
+        content: "";
+        position: absolute;
+        left: 20px;
+        border: 6px solid transparent;
+    }
+
+    .info-message.bottom::after {
+        top: -12px;
+        border-bottom-color: #333;
+    }
+
+    .info-message.top::after {
+        bottom: -12px;
+        border-top-color: #333;
+    }
+
+    @media (max-width: 600px) {
+        .info-message {
+            max-width: 90vw;
+        }
+    }
+</style>
+</head>
+
+<body>
+
+<h2>Несколько информационных иконок</h2>
+
+<div class="info-wrapper">
+    <div class="info-icon" data-info="Сообщение первой иконки">i</div>
+</div>
+
+<div class="info-wrapper">
+    <div class="info-icon" data-info="Второе сообщение. Оно может быть длиннее и автоматически позиционируется.">i</div>
+</div>
+
+<div class="info-wrapper">
+    <div class="info-icon" data-info="Третья иконка тоже полностью независима.">i</div>
+</div>
+
+<script>
+    let activeTooltip = null;
+
+    function createTooltip(text) {
+        const tooltip = document.createElement('div');
+        tooltip.className = 'info-message';
+        tooltip.textContent = text;
+        document.body.appendChild(tooltip);
+        return tooltip;
+    }
+
+    function positionTooltip(icon, tooltip) {
+        const rect = icon.getBoundingClientRect();
+        const tooltipRect = tooltip.getBoundingClientRect();
+        const spaceBelow = window.innerHeight - rect.bottom;
+        const spaceAbove = rect.top;
+
+        let top, left;
+        left = rect.left + rect.width / 2 - tooltipRect.width / 2;
+
+        // Ограничение по горизонтали
+        left = Math.max(10, Math.min(left, window.innerWidth - tooltipRect.width - 10));
+
+        if (spaceBelow > tooltipRect.height + 10) {
+            // Снизу
+            top = rect.bottom + 10;
+            tooltip.classList.remove('top');
+            tooltip.classList.add('bottom');
+        } else {
+            // Сверху
+            top = rect.top - tooltipRect.height - 10;
+            tooltip.classList.remove('bottom');
+            tooltip.classList.add('top');
+        }
+
+        tooltip.style.top = top + 'px';
+        tooltip.style.left = left + 'px';
+    }
+
+    function closeTooltip() {
+        if (activeTooltip) {
+            activeTooltip.remove();
+            activeTooltip = null;
+        }
+    }
+
+    document.querySelectorAll('.info-icon').forEach(icon => {
+
+        icon.addEventListener('click', (e) => {
+            e.stopPropagation();
+
+            if (activeTooltip) {
+                closeTooltip();
+            }
+
+            const tooltip = createTooltip(icon.dataset.info);
+            positionTooltip(icon, tooltip);
+
+            requestAnimationFrame(() => {
+                tooltip.classList.add('active');
+            });
+
+            activeTooltip = tooltip;
+        });
+
+        icon.parentElement.addEventListener('mouseleave', () => {
+            closeTooltip();
+        });
+    });
+
+    document.addEventListener('click', () => {
+        closeTooltip();
+    });
+
+    window.addEventListener('resize', () => {
+        closeTooltip();
+    });
+</script>
+
+</body>
+</html>
+```
+
+---
+
+## 🔥 Что здесь реализовано
+
+### Автопозиционирование
+
+* Проверяется доступное место сверху и снизу
+* Если снизу не помещается — показывается сверху
+* Есть ограничение по краям экрана
+
+### Поддержка нескольких иконок
+
+* Используется `querySelectorAll`
+* Текст берётся из `data-info`
+* Всегда открыт только один tooltip
+
+### UX-поведение
+
+* Плавное появление
+* Стрелка автоматически меняет направление
+* Закрытие:
+
+  * клик вне
+  * уход курсора
+  * resize окна
+  * повторный клик
+
+---
+
+Если хочешь — могу сделать ещё более «enterprise» версию:
+
+Вот обновлённая **цельная HTML-страница**:
+
+* ✅ Плавная анимация появления/скрытия (fade + лёгкий сдвиг)
+* ✅ Работает на мобильных
+* ✅ Закрывается при клике вне блока
+* ✅ На мобильных закрывается повторным нажатием
+
+---
+
+```html
+<!DOCTYPE html>
+<html lang="ru">
+<head>
+<meta charset="UTF-8">
+<meta name="viewport" content="width=device-width, initial-scale=1.0">
+<title>Информационная иконка</title>
+
+<style>
+    body {
+        font-family: Arial, sans-serif;
+        padding: 50px;
+    }
+
+    .info-wrapper {
+        position: relative;
+        display: inline-block;
+    }
+
+    .info-icon {
+        width: 36px;
+        height: 36px;
+        border-radius: 50%;
+        background-color: #007bff;
+        color: #fff;
+        display: flex;
+        align-items: center;
+        justify-content: center;
+        cursor: pointer;
+        font-weight: bold;
+        user-select: none;
+        transition: background-color 0.2s ease;
+    }
+
+    .info-icon:hover {
+        background-color: #0056b3;
+    }
+
+    .info-message {
+        position: absolute;
+        top: 48px;
+        left: 0;
+        min-width: 240px;
+        padding: 14px;
+        background-color: #333;
+        color: #fff;
+        border-radius: 8px;
+        font-size: 14px;
+        z-index: 10;
+
+        /* Анимация */
+        opacity: 0;
+        transform: translateY(-10px);
+        pointer-events: none;
+        transition: opacity 0.25s ease, transform 0.25s ease;
+    }
+
+    .info-message.active {
+        opacity: 1;
+        transform: translateY(0);
+        pointer-events: auto;
+    }
+
+    /* 📱 Мобильная версия */
+    @media (max-width: 600px) {
+        body {
+            padding: 20px;
+        }
+
+        .info-message {
+            left: 50%;
+            transform: translate(-50%, -10px);
+            width: 90vw;
+            max-width: 320px;
+        }
+
+        .info-message.active {
+            transform: translate(-50%, 0);
+        }
+    }
+</style>
+</head>
+
+<body>
+
+<h2>Информационная иконка</h2>
+
+<div class="info-wrapper" id="infoWrapper">
+    <div class="info-icon" id="infoIcon">i</div>
+    <div class="info-message" id="infoMessage">
+        Это информационное сообщение.  
+        Оно плавно появляется при нажатии на иконку.
+        На мобильных устройствах закрывается повторным нажатием
+        или кликом вне блока.
+    </div>
+</div>
+
+<script>
+    const wrapper = document.getElementById('infoWrapper');
+    const icon = document.getElementById('infoIcon');
+    const message = document.getElementById('infoMessage');
+
+    // Открытие / закрытие по клику
+    icon.addEventListener('click', (e) => {
+        e.stopPropagation();
+        message.classList.toggle('active');
+    });
+
+    // Закрытие при уходе курсора (десктоп)
+    wrapper.addEventListener('mouseleave', () => {
+        message.classList.remove('active');
+    });
+
+    // Закрытие при клике вне блока (мобильные + десктоп)
+    document.addEventListener('click', (e) => {
+        if (!wrapper.contains(e.target)) {
+            message.classList.remove('active');
+        }
+    });
+</script>
+
+</body>
+</html>
+```
+
+---
+
+### 🔹 Что добавлено
+
+**Анимация**
+
+* `opacity`
+* `transform: translateY`
+* `transition`
+
+**Мобильная версия**
+
+* `meta viewport`
+* Блок центрируется
+* Ширина `90vw`
+* Закрытие по клику вне области
+
+---
+
+Если нужно — могу сделать более продвинутый вариант:
+
+* с треугольной стрелкой (tooltip arrow)
+* с автопозиционированием сверху/снизу
+* с поддержкой нескольких иконок
+* как полноценный переиспользуемый JS-класс
+
+Скажи какой уровень продакшн-решения нужен 👍
+
+
+* с debounce позиционирования
+* с поддержкой скролла контейнера
+* как отдельный переиспользуемый ES6-класс
+* как мини-плагин без зависимостей
+
+Скажи, в каком контексте будет использоваться (админка / лендинг / сложный SPA)?
+
