@@ -1,0 +1,278 @@
+Для **.NET Framework 4.6** ситуация сложнее, так как `IHttpClientFactory` не встроен в фреймворк. Вам понадобится установить дополнительные NuGet пакеты.
+
+### 1. Установка NuGet пакетов
+
+Вам нужны следующие пакеты:
+
+```bash
+Install-Package Microsoft.Extensions.Http
+Install-Package Microsoft.Extensions.DependencyInjection
+Install-Package Microsoft.Net.Http
+```
+
+### 2. ReauthenticationHandler для .NET Framework 4.6
+
+```csharp
+using System;
+using System.Linq;
+using System.Net;
+using System.Net.Http;
+using System.Net.Http.Headers;
+using System.Threading;
+using System.Threading.Tasks;
+
+public class ReauthenticationHandler : DelegatingHandler
+{
+    private readonly IAuthService _authService;
+
+    public ReauthenticationHandler(IAuthService authService)
+    {
+        _authService = authService;
+    }
+
+    protected override async Task<HttpResponseMessage> SendAsync(
+        HttpRequestMessage request, 
+        CancellationToken cancellationToken)
+    {
+        // 1. Выполняем первоначальный запрос
+        var response = await base.SendAsync(request, cancellationToken).ConfigureAwait(false);
+
+        // 2. Проверяем статус 401
+        if (response.StatusCode == HttpStatusCode.Unauthorized)
+        {
+            // 3. Освобождаем ресурсы первого запроса
+            response.Dispose();
+
+            // 4. Выполняем переаутентификацию
+            await _authService.ReauthenticateAsync(cancellationToken).ConfigureAwait(false);
+
+            // 5. Клонируем запрос
+            var clonedRequest = await CloneRequestAsync(request, cancellationToken).ConfigureAwait(false);
+
+            // 6. Применяем новые данные аутентификации
+            await _authService.ApplyAuthHeadersAsync(clonedRequest, cancellationToken).ConfigureAwait(false);
+
+            // 7. Отправляем повторный запрос
+            return await base.SendAsync(clonedRequest, cancellationToken).ConfigureAwait(false);
+        }
+
+        return response;
+    }
+
+    private async Task<HttpRequestMessage> CloneRequestAsync(
+        HttpRequestMessage original, 
+        CancellationToken cancellationToken)
+    {
+        var clone = new HttpRequestMessage(original.Method, original.RequestUri);
+
+        // Копируем заголовки
+        foreach (var header in original.Headers)
+        {
+            clone.Headers.TryAddWithoutValidation(header.Key, header.Value);
+        }
+
+        // Копируем тело запроса
+        if (original.Content != null)
+        {
+            // В .NET Framework 4.6 ReadAsByteArrayAsync не принимает CancellationToken
+            var contentBytes = await original.Content.ReadAsByteArrayAsync().ConfigureAwait(false);
+            var newContent = new ByteArrayContent(contentBytes);
+
+            // Копируем заголовки контента
+            foreach (var header in original.Content.Headers)
+            {
+                newContent.Headers.TryAddWithoutValidation(header.Key, header.Value);
+            }
+
+            clone.Content = newContent;
+        }
+
+        // Копируем версию
+        clone.Version = original.Version;
+
+        // В .NET Framework 4.6 нет Properties/Options как в новых версиях
+        // Если вам нужно передавать дополнительные данные, используйте RequestMessage.Properties
+        foreach (var prop in original.Properties)
+        {
+            clone.Properties.Add(prop.Key, prop.Value);
+        }
+
+        return clone;
+    }
+}
+```
+
+### 3. Интерфейс IAuthService
+
+```csharp
+using System.Net.Http;
+using System.Threading;
+using System.Threading.Tasks;
+
+public interface IAuthService
+{
+    Task ReauthenticateAsync(CancellationToken cancellationToken);
+    Task ApplyAuthHeadersAsync(HttpRequestMessage request, CancellationToken cancellationToken);
+}
+```
+
+### 4. Пример реализации IAuthService
+
+```csharp
+using System;
+using System.Net.Http;
+using System.Net.Http.Headers;
+using System.Threading;
+using System.Threading.Tasks;
+
+public class MyAuthService : IAuthService
+{
+    private string _currentToken;
+    private readonly object _lock = new object();
+
+    public async Task ReauthenticateAsync(CancellationToken cancellationToken)
+    {
+        // Здесь ваша логика получения нового токена
+        // Например, запрос к серверу аутентификации
+        
+        await Task.Delay(100, cancellationToken); // Имитация запроса
+        
+        lock (_lock)
+        {
+            _currentToken = "new_token_" + DateTime.Now.Ticks;
+        }
+    }
+
+    public Task ApplyAuthHeadersAsync(HttpRequestMessage request, CancellationToken cancellationToken)
+    {
+        string token;
+        lock (_lock)
+        {
+            token = _currentToken;
+        }
+
+        // Удаляем старый заголовок Authorization, если есть
+        request.Headers.Authorization = null;
+        
+        // Устанавливаем новый
+        request.Headers.Authorization = new AuthenticationHeaderValue("Bearer", token);
+
+        return Task.CompletedTask;
+    }
+}
+```
+
+### 5. Настройка DI в .NET Framework 4.6
+
+В .NET Framework 4.6 нет встроенного DI контейнера, как в .NET Core. Вы можете использовать `Microsoft.Extensions.DependencyInjection`:
+
+```csharp
+using System;
+using System.Net.Http;
+using Microsoft.Extensions.DependencyInjection;
+
+public class Program
+{
+    private static IServiceProvider _serviceProvider;
+
+    public static void Main(string[] args)
+    {
+        // Настройка DI контейнера
+        var services = new ServiceCollection();
+        
+        // Регистрируем сервисы
+        services.AddSingleton<IAuthService, MyAuthService>();
+        
+        // Регистрируем HttpClientFactory
+        services.AddHttpClient("MyApiClient", client =>
+        {
+            client.BaseAddress = new Uri("https://api.example.com/");
+            client.Timeout = TimeSpan.FromSeconds(30);
+        })
+        .AddHttpMessageHandler<ReauthenticationHandler>();
+
+        // Регистрируем сам хэндлер
+        services.AddTransient<ReauthenticationHandler>();
+
+        // Регистрируем ваш сервис
+        services.AddTransient<MyBusinessService>();
+
+        _serviceProvider = services.BuildServiceProvider();
+
+        // Использование
+        RunAsync().Wait();
+    }
+
+    private static async Task RunAsync()
+    {
+        using (var scope = _serviceProvider.CreateScope())
+        {
+            var myService = scope.ServiceProvider.GetRequiredService<MyBusinessService>();
+            var result = await myService.GetDataAsync();
+            Console.WriteLine(result);
+        }
+    }
+}
+```
+
+### 6. Пример бизнес-сервиса
+
+```csharp
+using System;
+using System.Net.Http;
+using System.Threading.Tasks;
+
+public class MyBusinessService
+{
+    private readonly IHttpClientFactory _httpClientFactory;
+
+    public MyBusinessService(IHttpClientFactory httpClientFactory)
+    {
+        _httpClientFactory = httpClientFactory;
+    }
+
+    public async Task<string> GetDataAsync()
+    {
+        var client = _httpClientFactory.CreateClient("MyApiClient");
+
+        var request = new HttpRequestMessage(HttpMethod.Get, "/api/data");
+
+        var response = await client.SendAsync(request);
+        
+        response.EnsureSuccessStatusCode();
+        
+        return await response.Content.ReadAsStringAsync();
+    }
+}
+```
+
+### ⚠️ Важные отличия для .NET Framework 4.6:
+
+1. **Отсутствие `CancellationToken` в некоторых методах:**
+   - `ReadAsByteArrayAsync()` не принимает `CancellationToken` в .NET Framework 4.6
+   - Используйте `.ConfigureAwait(false)` для избежания deadlock-ов в UI приложениях
+
+2. **Свойства запроса:**
+   - Вместо `Options` используется `Properties` (Dictionary<object, object>)
+
+3. **Управление временем жизни:**
+   - В .NET Framework 4.6 нет встроенного механизма автоматического управления временем жизни `HttpClient`
+   - `IHttpClientFactory` из NuGet пакета решает эту проблему
+
+4. **Cookie контейнер:**
+   - Если используете куки, настройте `HttpClientHandler` с `CookieContainer`:
+
+```csharp
+services.AddHttpClient("MyApiClient")
+    .ConfigurePrimaryHttpMessageHandler(() => new HttpClientHandler
+    {
+        CookieContainer = new System.Net.CookieContainer(),
+        UseCookies = true
+    })
+    .AddHttpMessageHandler<ReauthenticationHandler>();
+```
+
+5. **Асинхронность:**
+   - Всегда используйте `.ConfigureAwait(false)` в библиотеках для .NET Framework, чтобы избежать проблем с синхронизацией контекста
+
+Этот код полностью совместим с .NET Framework 4.6 и будет корректно работать с переаутентификацией при получении статуса 401.
